@@ -1,4 +1,12 @@
 <?php
+/*
+可序列化类的写法
+
+- 继承TBase，拥有encode和decode方法
+- 每个类可以写一个onEncode和onDecode方法，参考T_Carton;
+- 简单基础的类可以直接重写decode方法，参考T_S7Str
+- TODO: 数组的实现是固化的，未考虑长度，可能不对
+*/
 
 class TBase
 {
@@ -87,7 +95,14 @@ class TBase
 	{
 		$len = 2;
 		$o = unpack("na", substr($pack, $pos, $len));
-		$pos += 2;
+		$pos += $len;
+		return $o["a"];
+	}
+	static function readInt32($pack, &$pos)
+	{
+		$len = 4;
+		$o = unpack("Na", substr($pack, $pos, $len));
+		$pos += $len;
 		return $o["a"];
 	}
 }
@@ -113,6 +128,7 @@ class T_S7Str extends TBase
 	}
 }
 
+// 支持编码解码的示例类的实现
 class T_Carton extends TBase
 {
 	protected function onEncode($obj) {
@@ -150,6 +166,7 @@ class T_ArrivePackage extends TBase
 	}
 }
 
+// 测试代码
 $pack = [
 	"ac" => "arrive",
 	"area" => "A",
