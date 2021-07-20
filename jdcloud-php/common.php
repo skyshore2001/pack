@@ -32,6 +32,8 @@ $ERRINFO = [
 @param $internalMsg String. 内部错误信息，前端不应处理。
 @param $outMsg String. 错误信息。如果为空，则会自动根据$code填上相应的错误信息。
 
+(v6) 一般建议使用jdRet。
+
 抛出错误，中断执行:
 
 	throw new MyException(E_PARAM, "Bad Request - numeric param `$name`=`$ret`.", "需要数值型参数");
@@ -46,8 +48,8 @@ $ERRINFO = [
 # Most time outMsg is optional because it can be filled according to code. It's set when you want to tell user the exact error.
 class MyException extends LogicException 
 {
-	function __construct($code, $internalMsg = null, $outMsg = null) {
-		parent::__construct($outMsg, $code);
+	function __construct($code, $internalMsg = null, $outMsg = null, $ex = null) {
+		parent::__construct($outMsg, $code, $ex);
 		$this->internalMsg = $internalMsg;
 		if ($code && !$outMsg) {
 			global $ERRINFO;
@@ -69,6 +71,8 @@ class MyException extends LogicException
 /**
 @class DirectReturn
 
+(v6) 一般建议使用jdRet。
+
 抛出该异常，可以中断执行直接返回，不显示任何错误。
 
 例：API返回非BPQ协议标准数据，可以跳出setRet而直接返回：
@@ -86,6 +90,47 @@ class DirectReturn extends LogicException
 {
 }
 
+/**
+@fn jdRet($code?, $internalMsg?, $msg?)
+
+直接返回（可用echo/readfile等自行输出返回内容，否则系统不自动输出）：
+
+	readfile(f1);
+	jdRet();
+
+成功返回：
+
+	jdRet(E_OK);
+	jdRet(E_OK, ["id" => 100]);
+	// 返回 [0, {"id": 100}]
+
+出错返回：
+
+	jdRet(E_PARAM);
+	jdRet(E_PARAM, "bad param");
+	jdRet(E_PARAM, "bad param", "参数错");
+	// 返回 [1, "参数错", "bad param"] 注意结果中字符串顺序不同，第3参数才是最终给用户看的报错信息（常用中文）。
+
+(v6) 自定义返回：(code传null)
+
+	jdRet(null, "{\"code\": 0, \"msg\": \"hello\"}");
+	// 返回`{"code": 0, "msg": "hello"}`，注意不是标准筋斗云返回格式。
+
+注意：对于自定义文本输出，用`jdRet(null, data)`比直接echo要好，因为echo不记录日志到debug日志，在ApiLog中也看不到输出，不利于接口内容审计。
+
+	echo("{\"code\": 0, \"msg\": \"hello\"}");
+	jdRet(null, "{\"code\": 0, \"msg\": \"hello\"}");
+
+更规范地，对于接口自定义格式输出，应使用 $X_RET_FN 定义转换函数。
+
+*/
+function jdRet($code = null, $internalMsg = null, $msg = null)
+{
+	if ($code)
+		throw new MyException($code, $internalMsg, $msg);
+	setRet($code, $internalMsg, $msg);
+	throw new DirectReturn();
+}
 
 /**
 @fn tobool($s)
@@ -504,7 +549,7 @@ function addToStr(&$str, $str1, $sep=',')
 
 示例：
 
-	$arrCopy($wiData, $workItem); // 复制全部字段过去
+	arrCopy($wiData, $workItem); // 复制全部字段过去
 
 如果不想覆盖已有字段(即使值为null也不覆盖)，可以用：
 
@@ -527,6 +572,88 @@ function arrCopy(&$ret, $arr, $fields=null)
 		else
 			@$ret[$f] = $arr[$f];
 	}
+}
+
+/**
+@fn arrFind($arr, $fn)
+
+示例：
+
+	$personArr = [ ["id"=>1, "name"=>"name1"], ["id"=>2, "name"=>"name2"] ];
+	$person = arrFind($arr, function ($e) {
+		return $e["id"] === 1;
+	});
+	if ($person === false) {
+		// 未找到
+	}
+	
+*/
+function arrFind($arr, $fn)
+{
+	assert(is_array($arr));
+	assert(is_callable($fn));
+	foreach ($arr as $e) {
+		if ($fn($e))
+			return $e;
+	}
+	return false;
+}
+
+/**
+@fn arrMap($arr, $fn)
+
+示例：
+
+	$personArr = [ ["id"=>1, "name"=>"name1"], ["id"=>2, "name"=>"name2"] ];
+	$personIdList = arrMap($arr, function ($e) {
+		return $e["id"];
+	});
+	// [1, 2]
+
+*/
+function arrMap($arr, $fn)
+{
+	assert(is_array($arr));
+	assert(is_callable($fn));
+	$ret = [];
+	foreach ($arr as $e) {
+		$ret[] = $fn($e);
+	}
+	return $ret;
+}
+
+/**
+@fn arrGrep($arr, $fn, $mapFn=null)
+
+示例：
+
+	$personArr = [ ["id"=>1, "name"=>"name1"], ["id"=>2, "name"=>"name2"] ];
+	$personArr1 = arrGrep($arr, function ($e) {
+		return $e["id"] > 1;
+	}); // [ ["id"=>2, "name"=>"name2"] ]
+
+	$personNameArr1 = arrGrep($arr, function ($e) {
+		return $e["id"] > 1;
+	}, function ($e) {
+		return $e["name"];
+	}); // [ "name2" ]
+	
+*/
+function arrGrep($arr, $fn, $mapFn=null)
+{
+	assert(is_array($arr));
+	assert(is_callable($fn));
+	assert(is_callable($mapFn));
+	$ret = [];
+	foreach ($arr as $e) {
+		if ($fn($e)) {
+			if ($mapFn === null)
+				$ret[] = $e;
+			else
+				$ret[] = $mapFn($e);
+		}
+	}
+	return $ret;
 }
 
 /**
@@ -607,6 +734,8 @@ function logit($s, $addHeader=true, $type="trace")
 function jsonEncode($data, $doPretty=false)
 {
 	$flag = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+	if (defined("JSON_INVALID_UTF8_SUBSTITUTE")) // php7 JSON_INVALID_UTF8_IGNORE
+		$flag |= JSON_INVALID_UTF8_SUBSTITUTE;
 	if ($doPretty)
 		$flag |= JSON_PRETTY_PRINT;
 	return json_encode($data, $flag);
@@ -930,6 +1059,287 @@ function fromMh($str)
 	if ($unit === 'd')
 		return $val * 24.0;
 	return $val;
+}
+
+/**
+@fn isArray012($var)
+
+判断是否为数值键的数组
+*/
+function isArray012($var)
+{
+	return is_array($var) && (count($var)==0 || array_key_exists(0, $var));
+}
+
+/**
+@fn isArrayAssoc($var)
+
+判断是否为关联数组
+*/
+function isArrayAssoc($var)
+{
+	return is_array($var) && !array_key_exists(0, $var);
+}
+
+/**
+@fn makeTree($arr, $idField="id", $fatherIdField="fatherId", $childrenField="children"
+
+将array转成tree.
+
+	$ret = makeTree([
+		["id"=>1],
+		["id"=>2, "fatherId"=>1],
+		["id"=>3, "fatherId"=>2],
+		["id"=>4, "fatherId"=>1]
+	]);
+
+结果：
+
+	$ret = [
+		["id"=>1, "children"=> [
+			["id"=>2, "fatherId"=>1, "children"=> [
+				["id"=>3, "fatherId"=>2],
+			],
+			["id"=>4, "fatherId"=>1]
+		]
+	]
+*/
+function makeTree($arr, $idField="id", $fatherIdField="fatherId", $childrenField="children")
+{
+	$ret = [];
+	foreach ($arr as &$e) {
+		$fid = $e[$fatherIdField];
+		if (! $fid) {
+			$ret[] = &$e;
+			continue;
+		}
+		$found = false;
+		foreach ($arr as &$e1) {
+			if ($fid == $e1[$idField]) {
+				$e1[$childrenField][] = &$e;
+				$found = true;
+				break;
+			}
+		}
+		if (! $found)
+			$ret[] = &$e;
+	}
+	return $ret;
+}
+
+/**
+@fn readBlock($getLine, $makeBlock, $isNewBlock, $handleBlock, $opt)
+
+readBlock编程模式
+
+原型问题：读一个文件，其中以"#"开头的行(curLine)表示一个块(block)开始，这个块一直到下一个块开始处才结束。如：
+
+	# block1
+	paragraph 1
+	paragraph 2
+	# block 2
+	paragraph 3
+	# block 3
+
+提供以下回调函数，将解析出每个块，并最终交给handleBlock回调处理：
+
+	$block = null;
+	$curLine = getLine() // 读一行，返回null或false表示结束
+	makeBlock(&$block, $curLine) // 读一行时，添加到block
+	isNewBlock($curLine); // 判断一个新的block开始
+	handleBlock($block) // 处理block
+
+- opt: {skipStart=false} 可设置忽略开头行
+
+使用模型后示例如下：
+
+	$fp = fopen("1.txt","r");
+	readBlock(function () use ($fp) { // getLine
+		return fgets($fp);
+	}, function (&$block, $curLine) { // makeBlock
+		$block .= $curLine;
+	}, function ($curLine) { // isNewBlock
+		return $curLine[0] == "#";
+	}, function ($block) { // handleBlock
+		echo(">>>$block<<<\n");
+	});
+	fclose($fp);
+
+假如以数组方式处理，示例如下（注意除了getLine不同，其余部分相同）：
+
+	$arr = file("1.txt");
+	$i = 0;
+	readBlock(function () use ($arr, &$i) { // getLine
+		if ($i == count($arr))
+			return false;
+		return $arr[$i++];
+	}, function (&$block, $curLine) { // makeBlock
+		$block .= $curLine;
+	}, function ($curLine) { // isNewBlock
+		return $curLine[0] == "#";
+	}, function ($block) { // handleBlock
+		echo("$block\n");
+	});
+
+## 参考原型程序
+
+	$fp = fopen("1.txt","r");
+	$block = null;
+	while (true) {
+		$curLine = fgets($fp);
+		if ($curLine === false || ($block != null && $curLine[0] == "#")) {
+			handleBlock($block);
+			if ($curLine === false)
+				break;
+			$block = $curLine;
+			continue;
+		}
+		$block .= $curLine;
+	}
+	fclose($fp);
+
+## 协程(php5.5后支持)
+
+将`$handleBlock($block)`调用改为`yield $block`可提供协程式编程风格，可把循环控制交给主程序，调用示例：
+
+	$fp = fopen("1.txt","r");
+	$g = readBlockG(...);
+	while($g->valid()) {
+		$block = $g->current();
+		handleBlock($block);
+		$g->next();
+	}
+	fclose($fp);
+
+*/
+function readBlock($getLine, $makeBlock, $isNewBlock, $handleBlock, $opt=[])
+{
+	$opt += ["skipStart" => false];
+	$block = null;
+	while (true) {
+		$curLine = $getLine();
+		$isEnd = ($curLine === false || $curLine === null);
+		if ($isEnd || $isNewBlock($curLine)) {
+			if ($block != null)
+				$handleBlock($block);
+			if ($isEnd)
+				break;
+			$block = null; // init
+			if (! $opt["skipStart"])
+				$makeBlock($block, $curLine);
+			continue;
+		}
+		$makeBlock($block, $curLine);
+	}
+}
+
+/**
+@fn readBlock2($getLine, $makeBlock, $isBlockStart, $isBlockEnd, $handleBlock, $opt=[])
+
+readBlock2编程模式
+
+原型问题：读一个文件，其中以"#"开头的行(curLine)表示一个块(block)开始，以"."开头的行表示一个块结束，如：
+
+	# block1
+	paragraph 1
+	paragraph 2
+	.
+	others -- out of block
+	# block 2
+	paragraph 3
+	.
+	other2 -- out of block
+	# block 3
+
+提供以下回调函数，将解析出每个块，并最终交给handleBlock回调处理：
+
+	$block = null;
+	$curLine = getLine() // 读一行，返回null或false表示结束
+	makeBlock(&$block, $curLine) // 读一行时，添加到block
+	isBlockStart($curLine); // 判断一个block开始
+	isBlockEnd($curLine); // 判断一个block结束
+	handleBlock($block) // 处理block
+
+- opt: {skipStart=false, skipEnd=true} 可设置忽略开头行，以及包含结束行
+
+使用模型后的代码：
+
+	$fp = fopen("1.txt","r");
+	readBlock2(function () use ($fp) { // getLine
+		return fgets($fp);
+	}, function (&$block, $curLine) { // makeBlock
+		$block .= $curLine;
+	}, function ($curLine) { // isBlockStart
+		return $curLine[0] == "#";
+	}, function ($curLine) { // isBlockEnd
+		return $curLine[0] == ".";
+	}, function ($block) { // handleBlock
+		echo(">>>$block<<<\n");
+	});
+	fclose($fp);
+
+设置选项示例：
+
+	readBlock2(...
+	, ["skipStart"=>true]);
+
+原型代码：
+
+	$fp = fopen("1.txt","r");
+	$block = null;
+	$blockFlag = false;
+	while (true) {
+		$curLine = fgets($fp);
+		if ($curLine === false)
+			break;
+		if (! $blockFlag) {
+			if ($curLine[0] == "#")
+				$blockFlag = true;
+		}
+		else if ($curLine[0] == '.') {
+			$blockFlag = false;
+			handleBlock($block);
+			$block = null;
+			continue;
+		}
+		if ($blockFlag)
+			$block .= $curLine;
+	}
+	fclose($fp);
+
+	function handleBlock($s)
+	{
+		echo(">>>$s<<<\n");
+	}
+*/
+function readBlock2($getLine, $makeBlock, $isBlockStart, $isBlockEnd, $handleBlock, $opt=[])
+{
+	$opt += ["skipStart"=>false, "skipEnd"=>true];
+	$block = null;
+	$blockFlag = false;
+	while (true) {
+		$curLine = $getLine();
+		if ($curLine === false || $curLine === null)
+			break;
+		if (! $blockFlag) {
+			if ($isBlockStart($curLine)) {
+				$blockFlag = true;
+				if ($opt["skipStart"])
+					continue;
+			}
+		}
+		else if ($isBlockEnd($curLine)) {
+			if (! $opt["skipEnd"])
+				$makeBlock($block, $curLine);
+			$blockFlag = false;
+			if ($block != null)
+				$handleBlock($block);
+			$block = null; // init
+			continue;
+		}
+		if ($blockFlag)
+			$makeBlock($block, $curLine);
+	}
 }
 
 // vi: foldmethod=marker

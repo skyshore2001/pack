@@ -1,4 +1,8 @@
 {
-"ac": "receive",
-"area": "A"
+"ac": "arrive",
+"area": "A",
+"cartonList": [
+	{ "code": "carton01", "type": "t1", "qty": 10 },
+	{ "code": "carton02", "type": "t2", "qty": 12 }
+]
 }

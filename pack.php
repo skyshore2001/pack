@@ -165,7 +165,13 @@ class T_ArrivePackage extends TBase
 		];
 	}
 }
+$GLOBALS["PackageMap"] = [
+	"arrive" => "T_ArrivePackage"
+];
 
+
+
+if (! $GLOBALS["noExecApi"]) {
 // 测试代码
 $pack = [
 	"ac" => "arrive",
@@ -193,3 +199,4 @@ $p = new T_ArrivePackage();
 $x = $p->encode($pack);
 $y = $p->decode($x);
 var_dump($y);
+}

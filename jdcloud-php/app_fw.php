@@ -138,9 +138,6 @@ const RTEST_MODE=2;
 global $BASE_DIR;
 $BASE_DIR = dirname(dirname(__DIR__));
 
-global $JSON_FLAG;
-$JSON_FLAG = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
-
 global $DB, $DBCRED, $DBTYPE;
 $DB = "localhost/jdcloud";
 $DBCRED = "ZGVtbzpkZW1vMTIz"; // base64({user}:{pwd}), default: demo:demo123
@@ -357,10 +354,19 @@ $objarr值为：
 		[ "id"=>101, "qty"=>null, dscr=>"打蜡"]
 	]
 
+(v6) 对cond参数或cond类型是特别处理的，会自动从GET/POST中取值，并且支持字符串、数组、键值对多种形式，参考getQueryCond：
+
+	$cond = mparam("cond");
+	$gcond = param("gcond/cond");
 */
 function param($name, $defVal = null, $col = null, $doHtmlEscape = true)
 {
 	$type = parseType_($name); // NOTE: $name will change.
+
+	// cond特别处理
+	if ($name == "cond" || $type == "cond")
+		return getQueryCond([$_GET[$name], $_POST[$name]]);
+
 	$ret = $defVal;
 	if ($col === "G") {
 		if (isset($_GET[$name]))
@@ -507,23 +513,41 @@ function mparam($name, $col = null)
 }
 
 /**
-@fn checkParams($params, $names)
+@fn checkParams($params, $names, $errPrefix?)
 
 检查必填参数。
 
 示例：params中必须有"brand", "vendorName"字段，否则应报错：
 
 	checkParams($params, [
-		"brand" => "品牌",
-		"vendorName" => "供应商"
+		"brand", "vendorName"
 	]);
 
+或如果希望报错时明确一些，可以翻译一下参数，这样来指定：
+
+	checkParams($params, [
+		"brand" => "品牌",
+		"vendorName" => "供应商",
+		"phone" // 也允许不指定名字
+	]);
+
+示例：
+
+	foreach ($_POST as $i=>$e) {
+		checkParams($e, ["MATNR"=>"物料号", "MAKTX"=>"物料名"], "第".($i+1)."行"); // 设置第3参数，可让报错时前面会加上这个描述
+		...
+	}
 */
-function checkParams($params, $names)
+function checkParams($params, $names, $errPrefix="")
 {
 	foreach ($names as $name=>$showName) {
-		if (!@$params[$name])
-			throw new MyException(E_PARAM, "require param $name", "缺少参数`$showName`");
+		if (is_int($name))
+			$name = $showName;
+		else
+			$showName .= "({$name})";
+		if (!isset($params[$name]) || $params[$name] === "") {
+			throw new MyException(E_PARAM, "require param `$name`", $errPrefix."缺少参数`$showName`");
+		}
 	}
 }
 
@@ -968,53 +992,68 @@ function sql_concat()
 /**
 @fn getQueryCond(cond)
 
-示例：key-value形式
+根据cond生成查询条件字符串。其中cond可以是
 
-	$rv = getQueryCond([
-		"name"=>"eric",
-		"phone"=>null
-	]);
-	// "name='eric'
+- null，忽略
 
-	$rv = getQueryCond([
-		"name"=>"eric",
-		"phone IS NULL"
-	]);
-	// "name='eric' AND phone IS NULL"
+- 条件字符串，参考SQL语句WHERE条件语法（不支持函数、子查询等），示例：
 
-示例：条件数组
+		"100"或100 生成 "id=100"
+		"id=1"
+		"id>=1 and id<100"
+		"status='CR'"  注意字符串要加引号
+		"status IN ('CR','PA')"
+		"tm>='2020-1-1' AND tm<'2020-2-1'"
+		"name like 'wang%' OR dscr like 'want%'"
+		"name IS NULL OR dscr IS NOT NULL"
 
-	$rv = getQueryCond([
-		"type IS NOT NULL",
-		"tm>='2018-1-1' AND tm<'2019-1-1'"
-	]);
-	// "type IS NOT NULL AND (tm>='2018-1-1' AND tm<'2019-1-1')"
+- 键值对，键为字段名，值为查询条件，使用更加直观（如字符串不用加引号），如：
 
-（以上两种在jd-php中可混用）
+		["id"=>1, "status"=>"CR", "name"=>"null", "dscr"=>null, "f1"=>"", "f2"=>"empty"]
+		生成 "id=1 AND status='CR'" AND name IS NULL AND f2=''
+		注意，当值为null或空串时会忽略掉该条件，用"null"表示"IS NULL"条件，用"empty"表示空串。
 
-特别地：
+		可以使用符号： > < >= <= !(not) ~(like匹配)
+		["id"=>"<100", "tm"=>">2020-1-1", "status"=>"!CR", "name"=>"~wang%", "dscr"=>"~aaa", "dscr2"=>"!~aaa"]
+		生成 "id<100 AND tm>'2020-1-1" AND status<>'CR' AND name LIKE 'wang%' AND dscr LIKE '%aaa%' AND dscr2 NOT LIKE '%aaa%'"
+		like用于字符串匹配，字符串中用"%"或"*"表示通配符，如果不存在通配符，则表示包含该串(即生成'%xxx%')
 
-	getQueryCond(null) => null
-	getQueryCond("ALL") => null
-	getQueryCond(100) => "id=100"
-	getQueryCond("100") => "id=100"
-	getQueryCond("id<>100") => "id<>100"
+		["b"=>"!null", "d"=>"!empty"]
+		生成 "b IS NOT NULL" AND d<>''"
 
-默认用AND连接条件，也支持OR连接：
+	可用AND或OR连接多个条件，但不可加括号嵌套：
 
-	$rv = getQueryCond([
-		"_or" => true, // 特殊用法，标识用OR连接条件
-		"name"=>"eric",
-		"phone IS NULL"
-	]);
-	// "name='eric' OR phone IS NULL"
+		["tm"=>">=2020-1-1 AND <2020-2-1", "tm2"=>"<2020-1-1 OR >=2020-2-1"]
+		生成 "(tm>='2020-1-1' AND tm<'2020-2-1') AND (tm2<'2020-1-1' OR tm2>='2020-2-1')"
 
-	$rv = getQueryCond([
-		"type IS NOT NULL",
-		"tm>='2018-1-1' AND tm<'2019-1-1'",
-		"_or" => true
-	]);
-	// "type IS NOT NULL OR (tm>='2018-1-1' AND tm<'2019-1-1')"
+		["id"=>">=1 AND <100", "status"=>"CR OR PA", "status2"=>"!CR AND !PA OR null"]
+		生成 "(id>=1 AND id<100) AND (status='CR' OR status='PA') AND (status2<>'CR" AND status2<>'PA' OR status2 IS NULL)"
+
+		["a"=>"null OR empty", "b"=>"!null AND !empty", "_or"=>1]
+		生成 "(a IS NULL OR a='') OR (b IS NOT NULL AND b<>'')", 默认为AND条件, `_or`选项用于指定OR条件
+
+
+- 数组，每个元素是上述条件字符串或键值对，如：
+
+		["id>=1", "id<100", "name LIKE 'wang%'"] // "id>=1 AND id<100" AND name LIKE 'wang%'"
+		等价于 ["id"=>">=1 AND <100", "name"=>"~wang%"] 或混合使用 [ ["id"=>">=1 AND <100"], "name LIKE 'wang%'"]
+		["id=1", "id=2", "_or"=>true]  // 下划线开头是特别选项，"_or"表示用或条件，生成"id=1 OR id=2"
+
+支持前端传入的get/post参数中同时有cond参数，且cond参数允许为数组，比如传
+
+	URL中：cond[]=a=1&cond[]=b=2
+	POST中：cond=c=3
+
+后端处理
+
+	getQueryCond([$_GET["cond"], $_POST["cond"]]);
+
+最终得到cond参数为"a=1 AND b=2 AND c=3"。
+
+前端callSvr示例: url参数或post参数均可支持数组或键值对：
+
+	callSvr("Hub.query", {res:"id", cond: {id: ">=1 AND <100"}})
+	callSvr("Hub.query", {res:"id", cond: ["id>=1", "id<100"]}, $.noop, {cond: {name:"~wang%", dscr:"~111"}})
 
 */
 function getQueryCond($cond)
@@ -1031,22 +1070,68 @@ function getQueryCond($cond)
 	if (@$cond["_or"]) {
 		$isOR = true;
 	}
-
 	foreach($cond as $k=>$v) {
+		if ($v === null)
+			continue;
 		if (is_int($k)) {
-			if (stripos($v, ' and ') !== false || stripos($v, ' or ') !== false)
-				$exp = "($v)";
-			else
-				$exp = $v;
+			$exp = getQueryCond($v);
+		}
+		else if ($k[0] == "_" || $v === null || $v === "") {
+			continue;
 		}
 		else {
-			if ($v === null || $k[0] == "_")
-				continue;
-			$exp = "$k=" . Q($v);
+			// key => value, e.g. { id: ">100 AND <20", name: "~wang*", status: "CR OR PA", status2: "!CR AND !PA OR null"}
+			$exp = preg_replace_callback('/(.+?)(\s+(AND|OR)\s+|$)/i', function ($ms) use ($k) {
+				return getQueryExp($k, $ms[1]) . $ms[2];
+			}, $v);
 		}
+		if (!$exp)
+			continue;
 		$condArr[] = $exp;
 	}
+	if (count($condArr) == 0)
+		return null;
+	// 超过1个条件时，对复合条件自动加括号
+	if (count($condArr) > 1) {
+		foreach ($condArr as &$exp) {
+			if (stripos($exp, ' and ') !== false || stripos($exp, ' or ') !== false) {
+				$exp = "($exp)";
+			}
+		}
+	}
 	return join($isOR?' OR ':' AND ', $condArr);
+}
+
+// similar to h5 getexp but not same
+function getQueryExp($k, $v)
+{
+	if (is_numeric($v))
+		return "$k=$v";
+	if ($v === "null")
+		return "$k IS NULL";
+	if ($v === "!null")
+		return "$k IS NOT NULL";
+
+	$op = '=';
+	$v = preg_replace_callback('/^[><=!~]+/', function ($ms) use (&$op) {
+		if ($ms[0] == '!' || $ms[0] == '!=')
+			$op = '<>';
+		else if ($ms[0] == '~')
+			$op = ' LIKE ';
+		else if ($ms[0] == '!~')
+			$op = ' NOT LIKE ';
+		else
+			$op = $ms[0];
+		return "";
+	}, $v);
+	if ($v === "empty")
+		$v = "";
+	if (stripos($op, ' LIKE ') !== false) {
+		$v = str_replace("*", "%", $v);
+		if (strpos($v, '%') === false)
+			$v = '%'.$v.'%';
+	}
+	return $k . $op . (is_numeric($v)? $v: Q($v));
 }
 
 /**
@@ -1247,7 +1332,6 @@ e.g.
 		"tm" => date(FMT_DT),
 		"tm1" => dbExpr("now()"), // 使用dbExpr直接提供SQL表达式
 		"amount" => 100,
-		"raw" => ["id"=>100, "name"=>"jack"], // (v5.5) 数组转JSON保存
 		"dscr" => null // null字段会被忽略
 	]);
 
@@ -1280,8 +1364,7 @@ function dbInsert($table, $kv)
 			$values .= $v->val;
 		}
 		else if (is_array($v)) {
-			$values .= Q(jsonEncode($v));
-//			throw new MyException(E_PARAM, "dbInsert: array `$k` is not allowed. pls define subobj to use array.", "未定义的子表`$k`");
+			throw new MyException(E_PARAM, "dbInsert: array `$k` is not allowed. pls define subobj to use array.", "未定义的子表`$k`");
 		}
 		else {
 			$values .= Q(htmlEscape($v));
@@ -1468,7 +1551,6 @@ e.g.
 	$cnt = dbUpdate("Ordr", [
 		"amount" => 30,
 		"dscr" => "test dscr",
-		"raw" => ["id"=>100, "name"=>"jack"], // (v5.5) 数组转JSON保存
 		"tm" => "null", // 用""或"null"对字段置空；用"empty"对字段置空串。
 		"tm1" => null // null会被忽略
 	], 100);
@@ -1516,9 +1598,6 @@ function dbUpdate($table, $kv, $cond)
 		else if ($v instanceof DbExpr) { // 直接传SQL表达式
 			$kvstr .= $k . '=' . $v->val;
 		}
-		else if (is_array($v)) {
-			$kvstr .= $k . '=' . Q(jsonEncode($v));
-		}
 		else if (startsWith($k, "flag_") || startsWith($k, "prop_"))
 		{
 			$kvstr .= flag_getExpForSet($k, $v);
@@ -1532,7 +1611,7 @@ function dbUpdate($table, $kv, $cond)
 	}
 	else {
 		if (isset($condStr))
-			$sql = sprintf("UPDATE %s SET %s WHERE $condStr", $table, $kvstr);
+			$sql = sprintf("UPDATE %s SET %s WHERE %s", $table, $kvstr, $condStr);
 		else
 			$sql = sprintf("UPDATE %s SET %s", $table, $kvstr);
 		$cnt = execOne($sql);
@@ -1548,9 +1627,17 @@ function dbUpdate($table, $kv, $cond)
 
 	$cache = new SimpleCache(); // id=>name
 	for ($idList as $id) {
-		$name = $cache->get($id, function () use ($id){
+		$name = $cache->get($id, function () use ($id) {
 			return queryOne("SELECT name FROM Vendor WHERE id=$id");
 		});
+	}
+
+更简单地，也可以直接使用全局的cache (这时注意确保key在全局唯一）：
+
+	for ($idList as $id) {
+		$name = SimpleCache::getInstance()->get("VendorIdToName-{$id}", function () use ($id) {
+			return queryOne("SELECT name FROM Vendor WHERE id=$id");
+		})
 	}
 
 示例2：
@@ -1565,6 +1652,7 @@ function dbUpdate($table, $kv, $cond)
 */
 class SimpleCache
 {
+	use JDSingleton;
 	protected $cacheData = [];
 
 	// return false if key does not exist
@@ -2085,7 +2173,12 @@ class AppBase
 			addLog((string)$e, 9);
 		}
 		catch (PDOException $e) {
+			// SQLSTATE[23000]: Integrity constraint violation: 1451 Cannot delete or update a parent row: a foreign key constraint fails (`jdcloud`.`Obj1`, CONSTRAINT `Obj1_ibfk_1` FOREIGN KEY (`objId`) REFERENCES `Obj` (`id`))",
 			list($code, $msg, $msg2) = [E_DB, $ERRINFO[E_DB], $e->getMessage()];
+			if (preg_match('/a foreign key constraint fails [()]`\w+`.`(\w+)`/', $msg2, $ms)) {
+				$tbl = function_exists("T")? T($ms[1]) : $ms[1]; // T: translate function
+				$msg = "`$tbl`表中有数据引用了本记录";
+			}
 			addLog((string)$e, 9);
 		}
 		catch (Exception $e) {
@@ -2167,7 +2260,7 @@ class AppBase
  */
 trait JDSingleton
 {
-	private function __construct () {}
+//	private function __construct () {}
 	static function getInstance()
 	{
 		static $inst;
@@ -2202,7 +2295,7 @@ trait JDSingleton
  */
 trait JDSingletonImp
 {
-	private function __construct () {}
+//	private function __construct () {}
 	static function getInstance()
 	{
 		static $inst;
@@ -2305,15 +2398,12 @@ class AppFw_
 	private static function initGlobal()
 	{
 		global $TEST_MODE;
-		global $JSON_FLAG;
 		global $DBG_LEVEL;
 		$TEST_MODE = getenv("P_TEST_MODE")===false? 0: intval(getenv("P_TEST_MODE"));
 		$isCLI = isCLI();
 		if ($TEST_MODE) {
 			if (!$isCLI)
 				header("X-Daca-Test-Mode: $TEST_MODE");
-			$JSON_FLAG |= JSON_PRETTY_PRINT;
-
 		}
 		// 默认允许跨域
 		@$origin = $_SERVER['HTTP_ORIGIN'];

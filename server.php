@@ -1,10 +1,11 @@
 <?php
 
 //require_once('../php/autoload.php');
-//$GLOBALS["noExecApi"] = true;
+$GLOBALS["noExecApi"] = true;
 //require("../api.php");
 //require_once("../php/jdcloud-php/api_fw.php");
-require_once("./jdcloud-php/api_fw.php");
+require_once("./jdcloud-php/app_fw.php");
+require_once("./pack.php");
 
 $port = 8081;
 $workerNum = 1;
@@ -64,10 +65,19 @@ function handleRequest($req, $res)
 		if ($ct && stripos($ct, 'json') !== false) {
 			$req->post = jsonDecode($req->rawContent());
 		}
+		$p = $req->post;//"OK";
+		logit("receive http " . jsonEncode($p));
+		if (! @$p["ac"])
+			jdRet(E_PARAM, "bad package. no ac");
+		$packClass = $GLOBALS["PackageMap"][$p["ac"]];
+		if (! $packClass)
+			jdRet(E_PARAM, "unknown package {$p["ac"]}");
+		$data = (new $packClass)->encode($p);
+		logit("encode $packClass: " . $data);
+		// file_put_contents("1.data", $data);
+		// TODO: tcp send
 
-		$rv = $req->post;//"OK";
-		//$path = $req->server["path_info"];
-		$ret = [0, $rv];
+		$ret = [0, "OK"];
 		$ok = true;
 	}
 	catch (DirectReturn $e) {
