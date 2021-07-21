@@ -18,15 +18,16 @@ $server->set([
 ]);
 logit("=== server: port=$port, workers=$workerNum");
 
+/*
 $server->on('open', function ($ws, $req) {
 	logit("open: fd=" . $req->fd);
 });
-
+*/
 $port1 = $server->listen('0.0.0.0', $port+1, SWOOLE_SOCK_TCP);
 $port1->set([]);
 $port1->on("Receive", 'onReceive');
 
-
+/*
 $server->on('message', function ($ws, $frame) {
 	logit("onmessage: fd=" . $frame->fd);
 	$req = json_decode($frame->data, true);
@@ -38,21 +39,32 @@ $server->on('message', function ($ws, $frame) {
 	}
 	$ws->push($frame->fd, 'OK');
 });
+*/
 $server->on('WorkerStart', function ($server, $workerId) {
 	echo("=== worker $workerId starts. master_pid={$server->master_pid}, manager_pid={$server->manager_pid}, worker_pid={$server->worker_pid}\n");
 });
 
-$server->on("Receive", 'onReceive');
+$port1->on("Receive", 'onReceive');
 
 function onReceive($server, $fd, $reactorId, $data) {
-	$server->send($fd, "server: $data");
+	logit("receive tcp data $data");
+	$ac = (new T_S7Str)->decode($data);
+	$packClass = $GLOBALS["PackageMap"][$ac];
+	if (! $packClass)
+		jdRet(E_PARAM, "unknown package $ac");
+	$p = (new $packClass)->decode($data);
+	$json = jsonEncode($p);
+	logit("decode $packClass: $json");
+	$ret = pack("na*", 0, "OK");
+	$server->send($fd, $ret);
+	$server->close($fd);
 }
-
+/*
 $server->on('close', function ($ws, $fd) {
 	// NOTE: http request comes here too
 	logit("close: fd=" . $fd);
 });
-
+*/
 $server->on('request', 'handleRequest');
 
 function handleRequest($req, $res)
@@ -62,11 +74,12 @@ function handleRequest($req, $res)
 	$ret = null;
 	try {
 		$ct = $req->header["content-type"];
+		$reqData = $req->rawContent();
+		logit("receive http data (content-type=$ct): $reqData");
 		if ($ct && stripos($ct, 'json') !== false) {
-			$req->post = jsonDecode($req->rawContent());
+			$req->post = jsonDecode($reqData);
 		}
 		$p = $req->post;//"OK";
-		logit("receive http " . jsonEncode($p));
 		if (! @$p["ac"])
 			jdRet(E_PARAM, "bad package. no ac");
 		$packClass = $GLOBALS["PackageMap"][$p["ac"]];
