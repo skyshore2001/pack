@@ -165,8 +165,31 @@ class T_ArrivePackage extends TBase
 		];
 	}
 }
+
+class T_ToPortPackage extends TBase
+{
+	protected function onEncode($obj) {
+		return [
+			"T_S7Str", $obj["ac"],
+			"T_S7Str", $obj["boxCode"],
+			"T_S7Str", $obj["portCode"],
+			"n", $obj["weight"],
+		];
+	}
+
+	protected function onDecode() {
+		return [
+			"ac" => "T_S7Str",
+			"boxCode" => "T_S7Str",
+			"portCode" => "T_S7Str",
+			"weight" => "n"
+		];
+	}
+}
+
 $GLOBALS["PackageMap"] = [
-	"arrive" => "T_ArrivePackage"
+	"arrive" => "T_ArrivePackage",
+	"toport" => "T_ToPortPackage"
 ];
 
 

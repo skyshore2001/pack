@@ -7,10 +7,10 @@ $GLOBALS["noExecApi"] = true;
 require_once("./jdcloud-php/app_fw.php");
 require_once("./pack.php");
 
-$port = 8081;
 $workerNum = 1;
 
 $g_conf = [
+	"port" => 14000, // port2 = port+1
 	"targetHttp" => [
 		"host" => "oliveche.com",
 		"port" => 80,
@@ -22,6 +22,7 @@ $g_conf = [
 	]
 ];
 
+$port = $g_conf["port"];
 #$server = new Swoole\WebSocket\Server("0.0.0.0", $port);
 #$server = new Swoole\Server("0.0.0.0", $port);
 $server = new Swoole\Http\Server("0.0.0.0", $port);
@@ -60,24 +61,32 @@ $port1->on("Receive", 'onReceive');
 
 function onReceive($server, $fd, $reactorId, $data) {
 	logit("receive tcp data $data");
-	$ac = (new T_S7Str)->decode($data);
-	$packClass = $GLOBALS["PackageMap"][$ac];
-	if (! $packClass)
-		jdRet(E_PARAM, "unknown package $ac");
-	$p = (new $packClass)->decode($data);
-	$json = jsonEncode($p);
-	logit("decode $packClass: $json");
+	try {
+		$ac = (new T_S7Str)->decode($data);
+		$packClass = $GLOBALS["PackageMap"][$ac];
+		if (! $packClass)
+			jdRet(E_PARAM, "unknown package $ac");
+		$p = (new $packClass)->decode($data);
+		$json = jsonEncode($p);
+		logit("decode $packClass: $json");
 
-	$conf = $GLOBALS["g_conf"]["targetHttp"];
-	$cli = new Swoole\Coroutine\Http\Client($conf["host"], $conf["port"]);
-	$cli->setHeaders([
-		"Content-Type" => "application/json"
-	]);
-	$cli->post($conf["url"], $json);
-	echo $cli->body;
-	$cli->close();
+		$conf = $GLOBALS["g_conf"]["targetHttp"];
+		if ($conf["host"]) {
+			$cli = new Swoole\Coroutine\Http\Client($conf["host"], $conf["port"]);
+			$cli->setHeaders([
+				"Content-Type" => "application/json"
+			]);
+			$cli->post($conf["url"], $json);
+			logit("send http to " . $conf["host"] . ":" . $conf["port"] . ", recv " . $cli->body);
+			$cli->close();
+		}
 
-	$ret = pack("na*", 0, "OK");
+		$ret = "S:OK";
+	}
+	catch (Exception $e) {
+		$ret = "F:" . $e->getMessage();
+		logit("handle tcp fail: " . $e->getMessage());
+	}
 	$server->send($fd, $ret);
 	$server->close($fd);
 }
@@ -113,12 +122,15 @@ function handleRequest($req, $res)
 
 		// tcp send
 		$conf = $GLOBALS["g_conf"]["targetTcp"];
-		$cli = new Swoole\Coroutine\Client(SWOOLE_SOCK_TCP);
-		if (! $cli->connect($conf["host"], $conf["port"], 3))
-			jdRet(E_SERVER, "tcp connect fails");
-		$cli->send($data);
-		echo $cli->recv();
-		$cli->close();
+		if ($conf["host"]) {
+			$cli = new Swoole\Coroutine\Client(SWOOLE_SOCK_TCP);
+			if (! $cli->connect($conf["host"], $conf["port"], 3))
+				jdRet(E_SERVER, "tcp connect fails");
+			$cli->send($data);
+			$rv = $cli->recv();
+			logit("send tcp to " . $conf["host"] . ":" . $conf["port"] . ", recv " . $rv);
+			$cli->close();
+		}
 
 		$ret = [0, "OK"];
 		$ok = true;
@@ -135,6 +147,7 @@ function handleRequest($req, $res)
 	}
 	catch (Exception $e) {
 		$ret = [E_SERVER, $ERRINFO[E_SERVER], $e->getMessage()];
+		logit("handle http fail: " . $e->getMessage());
 	}
 
 	$retStr = jsonEncode($ret);

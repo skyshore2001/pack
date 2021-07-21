@@ -2,18 +2,18 @@ run server:
 
 	swoole server.php
 
-8081: http
-8082: tcp
+14000: http->tcp
+14001: tcp->http
 
 run test client (http):
 
 	cd test
 	sh ./if_test.sh
-	(use data from 1.json)
+	(use json data file)
 
 run test client (tcp):
 
 	cd test
 	sh ./if_test_tcp.sh
-	(use data from 1.data)
+	(use bin data file)
 
