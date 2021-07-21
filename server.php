@@ -10,6 +10,18 @@ require_once("./pack.php");
 $port = 8081;
 $workerNum = 1;
 
+$g_conf = [
+	"targetHttp" => [
+		"host" => "oliveche.com",
+		"port" => 80,
+		"url" => "/echo.php"
+	],
+	"targetTcp" => [
+		"host" => "localhost",
+		"port" => 9090,
+	]
+];
+
 #$server = new Swoole\WebSocket\Server("0.0.0.0", $port);
 #$server = new Swoole\Server("0.0.0.0", $port);
 $server = new Swoole\Http\Server("0.0.0.0", $port);
@@ -55,6 +67,16 @@ function onReceive($server, $fd, $reactorId, $data) {
 	$p = (new $packClass)->decode($data);
 	$json = jsonEncode($p);
 	logit("decode $packClass: $json");
+
+	$conf = $GLOBALS["g_conf"]["targetHttp"];
+	$cli = new Swoole\Coroutine\Http\Client($conf["host"], $conf["port"]);
+	$cli->setHeaders([
+		"Content-Type" => "application/json"
+	]);
+	$cli->post($conf["url"], $json);
+	echo $cli->body;
+	$cli->close();
+
 	$ret = pack("na*", 0, "OK");
 	$server->send($fd, $ret);
 	$server->close($fd);
@@ -88,7 +110,15 @@ function handleRequest($req, $res)
 		$data = (new $packClass)->encode($p);
 		logit("encode $packClass: " . $data);
 		// file_put_contents("1.data", $data);
-		// TODO: tcp send
+
+		// tcp send
+		$conf = $GLOBALS["g_conf"]["targetTcp"];
+		$cli = new Swoole\Coroutine\Client(SWOOLE_SOCK_TCP);
+		if (! $cli->connect($conf["host"], $conf["port"], 3))
+			jdRet(E_SERVER, "tcp connect fails");
+		$cli->send($data);
+		echo $cli->recv();
+		$cli->close();
 
 		$ret = [0, "OK"];
 		$ok = true;
