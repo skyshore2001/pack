@@ -4,7 +4,7 @@
 $GLOBALS["noExecApi"] = true;
 //require("../api.php");
 //require_once("../php/jdcloud-php/api_fw.php");
-require_once("./jdcloud-php/app_fw.php");
+require_once("./jdcloud-php/common.php");
 require_once("./pack.php");
 
 $workerNum = 1;
