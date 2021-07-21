@@ -3,7 +3,8 @@
 可序列化类的写法
 
 - 继承TBase，拥有encode和decode方法
-- 每个类可以写一个onEncode和onDecode方法，参考T_Carton;
+- 每个类可以写一个onDecode方法，参考T_Carton;
+- onEncode可以直接由onDecode生成，也可以自定义，参考T_S7Str
 - 简单基础的类可以直接重写decode方法，参考T_S7Str
 - TODO: 数组的实现是固化的，未考虑长度，可能不对
 */
@@ -52,15 +53,23 @@ class TBase
 	}
 
 	protected function onEncode($obj) {
+		$def = $this->onDecode();
+		$ret = [];
+		foreach ($def as $k => $type) {
+			$ret[] = $type;
+			$ret[] = $obj[$k];
+		}
+		return $ret;
 	}
 	protected function onDecode() {
+		jdRet(E_SERVER, "not implement");
 	}
 
 	private function getEncodeParams($values, &$fmt, &$param)
 	{
 		$cnt = count($values);
 		if ($cnt < 2 || $cnt % 2 != 0)
-			throw new Exception("bad arguments for writeBin");
+			throw new Exception("bad arguments for getEncodeParams");
 
 		for ($i=0; $i<$cnt; $i+=2) {
 			$k = $values[$i];
@@ -131,13 +140,6 @@ class T_S7Str extends TBase
 // 支持编码解码的示例类的实现
 class T_Carton extends TBase
 {
-	protected function onEncode($obj) {
-		return [
-			"T_S7Str", $obj["code"],
-			"T_S7Str", $obj["type"],
-			"n", $obj["qty"]
-		];
-	}
 	protected function onDecode() {
 		return [
 			"code" => "T_S7Str",
@@ -149,14 +151,6 @@ class T_Carton extends TBase
 
 class T_ArrivePackage extends TBase
 {
-	protected function onEncode($obj) {
-		return [
-			"T_S7Str", $obj["ac"],
-			"T_S7Str", $obj["area"],
-			"T_Carton*", $obj["cartonList"]
-		];
-	}
-
 	protected function onDecode() {
 		return [
 			"ac" => "T_S7Str",
@@ -168,15 +162,6 @@ class T_ArrivePackage extends TBase
 
 class T_ToPortPackage extends TBase
 {
-	protected function onEncode($obj) {
-		return [
-			"T_S7Str", $obj["ac"],
-			"T_S7Str", $obj["boxCode"],
-			"T_S7Str", $obj["portCode"],
-			"n", $obj["weight"],
-		];
-	}
-
 	protected function onDecode() {
 		return [
 			"ac" => "T_S7Str",
@@ -194,7 +179,7 @@ $GLOBALS["PackageMap"] = [
 
 
 
-if (! $GLOBALS["noExecApi"]) {
+if (! @$GLOBALS["noExecApi"]) {
 // 测试代码
 $pack = [
 	"ac" => "arrive",
