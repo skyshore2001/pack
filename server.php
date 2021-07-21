@@ -29,30 +29,12 @@ $server = new Swoole\Http\Server("0.0.0.0", $port);
 $server->set([
 	'worker_num'=>$workerNum,
 ]);
-logit("=== server: port=$port, workers=$workerNum");
+logit("=== server: http port=$port, tcp port=" . ($port+1) . ", workerCnt=$workerNum");
 
-/*
-$server->on('open', function ($ws, $req) {
-	logit("open: fd=" . $req->fd);
-});
-*/
 $port1 = $server->listen('0.0.0.0', $port+1, SWOOLE_SOCK_TCP);
 $port1->set([]);
 $port1->on("Receive", 'onReceive');
 
-/*
-$server->on('message', function ($ws, $frame) {
-	logit("onmessage: fd=" . $frame->fd);
-	$req = json_decode($frame->data, true);
-	if (@$req["ac"] == "init") {
-		global $clientMap, $clientMapR;
-		$id = $req["id"];
-		$clientMap[$id] = $frame->fd;
-		$clientMapR[$frame->fd] = $id;
-	}
-	$ws->push($frame->fd, 'OK');
-});
-*/
 $server->on('WorkerStart', function ($server, $workerId) {
 	echo("=== worker $workerId starts. master_pid={$server->master_pid}, manager_pid={$server->manager_pid}, worker_pid={$server->worker_pid}\n");
 });
@@ -90,12 +72,6 @@ function onReceive($server, $fd, $reactorId, $data) {
 	$server->send($fd, $ret);
 	$server->close($fd);
 }
-/*
-$server->on('close', function ($ws, $fd) {
-	// NOTE: http request comes here too
-	logit("close: fd=" . $fd);
-});
-*/
 $server->on('request', 'handleRequest');
 
 function handleRequest($req, $res)
@@ -155,9 +131,6 @@ function handleRequest($req, $res)
 }
 
 /*
-Swoole\Timer::after(13, function () {
-	echo(">>2000<<\n\n");
-});
 swoole_timer_after(4000, function () {
 	logit("4000");
 });
