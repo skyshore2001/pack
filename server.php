@@ -18,7 +18,7 @@ $g_conf = [
 	],
 	"targetTcp" => [
 		"host" => "localhost",
-		"port" => 9090,
+		"port" => 14002,
 	]
 ];
 

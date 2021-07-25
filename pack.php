@@ -22,27 +22,33 @@ class TBase
 	}
 	function decode($pack, &$pos=0) {
 		$val = $this->onDecode();
+		$size = null;
 		foreach ($val as $k => &$v) {
+			if (strpos($v, '[') !== false) {
+				$v = preg_replace_callback('/\[(\d+)\]/', function ($ms) use (&$size) {
+					$size = intval($ms[1]);
+					return '';
+				}, $v);
+			}
 			if ($v == "n") {
 				$v = self::readInt16($pack, $pos);
 			}
+			else if ($v == "f") {
+				$v = self::readFloat($pack, $pos);
+			}
 			else if (substr($v, 0, 2) == "T_") {
-				if (substr($v, -1) == "*") { // isArray
-					$v = substr($v, 0, -1);
-					if (!class_exists($v))
-						throw new Exception("bad class $v");
-					$cls = new $v;
-					$len = strlen($pack) - $pos;
+				if (!class_exists($v))
+					throw new Exception("bad class $v");
+				$obj = new $v;
+				if ($size) { // isArray
 					$v = [];
-					while ($pos < $len) {
-						$e = $cls->decode($pack, $pos);
+					for ($i=0; $i<$size; ++$i) {
+						$e = $obj->decode($pack, $pos);
 						$v[] = $e;
 					}
 				}
 				else {
-					if (!class_exists($v))
-						throw new Exception("bad class $v");
-					$v = (new $v)->decode($pack, $pos);
+					$v = $obj->decode($pack, $pos);
 				}
 			}
 			else {
@@ -74,16 +80,19 @@ class TBase
 		for ($i=0; $i<$cnt; $i+=2) {
 			$k = $values[$i];
 			$v = $values[$i+1];
+			$size = null;
+			if (strpos($k, '[') !== false) {
+				$k = preg_replace_callback('/\[(\d+)\]/', function ($ms) use (&$size) {
+					$size = intval($ms[1]);
+					return '';
+				}, $k);
+			}
 			if (substr($k, 0, 2) == "T_") {
-				$isArray = false;
-				if (substr($k, -1) == "*") {
-					$isArray = true;
-					$k = substr($k, 0, -1);
-				}
 				if (!class_exists($k))
 					throw new Exception("bad class $k");
-				if ($isArray) {
-					foreach ($v as $e) {
+				if ($size) {
+					for ($i=0; $i<$size; ++$i) {
+						@$e = $v[$i];
 						$rv = (new $k)->onEncode($e);
 						$this->getEncodeParams($rv, $fmt, $param);
 					}
@@ -111,6 +120,13 @@ class TBase
 	{
 		$len = 4;
 		$o = unpack("Na", substr($pack, $pos, $len));
+		$pos += $len;
+		return $o["a"];
+	}
+	static function readFloat($pack, &$pos)
+	{
+		$len = 4;
+		$o = unpack("fa", substr($pack, $pos, $len));
 		$pos += $len;
 		return $o["a"];
 	}
@@ -142,8 +158,8 @@ class T_Carton extends TBase
 {
 	protected function onDecode() {
 		return [
-			"code" => "T_S7Str",
-			"type" => "T_S7Str",
+			"code" => "T_S7Str[20]",
+			"type" => "T_S7Str[2]",
 			"qty" => "n"
 		];
 	}
@@ -153,9 +169,9 @@ class T_ArrivePackage extends TBase
 {
 	protected function onDecode() {
 		return [
-			"ac" => "T_S7Str",
-			"area" => "T_S7Str",
-			"cartonList" => "T_Carton*"
+			"ac" => "T_S7Str[8]",
+			"area" => "a",
+			"cartonList" => "T_Carton[20]"
 		];
 	}
 }
@@ -164,10 +180,10 @@ class T_ToPortPackage extends TBase
 {
 	protected function onDecode() {
 		return [
-			"ac" => "T_S7Str",
-			"boxCode" => "T_S7Str",
-			"portCode" => "T_S7Str",
-			"weight" => "n"
+			"ac" => "T_S7Str[8]",
+			"boxCode" => "T_S7Str[20]",
+			"portCode" => "T_S7Str[20]",
+			"weight" => "f"
 		];
 	}
 }
