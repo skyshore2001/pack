@@ -3,10 +3,13 @@
 可序列化类的写法
 
 - 继承TBase，拥有encode和decode方法
-- 每个类可以写一个onDecode方法，参考T_Carton;
+- 每个类可以写一个onDecode方法，定义每个字段的类型，参考T_Carton;
 - onEncode可以直接由onDecode生成，也可以自定义，参考T_S7Str
 - 简单基础的类可以直接重写decode方法，参考T_S7Str
 - 数组、字符串须定长; 数组前有个int16表示长度
+- 支持null
+
+自定义的报文结构开头须是`T_S7Str[8] ac`, 最终以`{ac=>报文类名}`的方式注册到`$GLOBALS["PackageMap"]`中。
 
 类型写法
 
@@ -227,6 +230,8 @@ class T_S7Str extends TBase
 		return $str;
 	}
 }
+
+// ====================== 应用报文定义 =======================
 
 // 支持编码解码的示例类的实现
 class T_Carton extends TBase
