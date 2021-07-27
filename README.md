@@ -2,8 +2,8 @@ run server:
 
 	swoole server.php
 
-14000: http->tcp
-14001: tcp->http
+14000: receive http, translate to tcp and send to target tcp (default=localhsot:14002)
+14001: receive tcp, translate to http and send to target http (default=oliveche.com/echo.php)
 
 run test client (http):
 
@@ -17,3 +17,8 @@ run test client (tcp):
 	sh ./if_test_tcp.sh
 	(use bin data file)
 
+how to convert json package to bin package:
+
+	nc -l 14002 > 1.bin
+	sh ./if_test.sh
+	(translate http to tcp and send to 14002)

@@ -22,6 +22,7 @@
 
 class TBase
 {
+	// string capacity for T_S7Str
 	protected $p1 = 0;
 
 	function encode($obj) {
@@ -228,6 +229,15 @@ class T_S7Str extends TBase
 		$str = substr($pack, $pos, $o["len"]);
 		$pos += $o["cap"];
 		return $str;
+	}
+}
+
+class T_BasePackage extends TBase
+{
+	protected function onDecode() {
+		return [
+			"ac" => "T_S7Str,8",
+		];
 	}
 }
 

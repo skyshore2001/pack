@@ -10,7 +10,8 @@ require_once("./pack.php");
 $workerNum = 1;
 
 $g_conf = [
-	"port" => 14000, // port2 = port+1
+	"httpPort" => 14000,
+	"tcpPort" => 14001,
 	"targetHttp" => [
 		"host" => "oliveche.com",
 		"port" => 80,
@@ -22,16 +23,15 @@ $g_conf = [
 	]
 ];
 
-$port = $g_conf["port"];
 #$server = new Swoole\WebSocket\Server("0.0.0.0", $port);
 #$server = new Swoole\Server("0.0.0.0", $port);
-$server = new Swoole\Http\Server("0.0.0.0", $port);
+$server = new Swoole\Http\Server("0.0.0.0", $g_conf["httpPort"]);
 $server->set([
 	'worker_num'=>$workerNum,
 ]);
-logit("=== server: http port=$port, tcp port=" . ($port+1) . ", workerCnt=$workerNum");
+logit("=== server: http port=" . $g_conf["httpPort"] . ", tcp port=" . $g_conf["tcpPort"] . ", workerCnt=$workerNum");
 
-$port1 = $server->listen('0.0.0.0', $port+1, SWOOLE_SOCK_TCP);
+$port1 = $server->listen('0.0.0.0', $g_conf["tcpPort"], SWOOLE_SOCK_TCP);
 $port1->set([]);
 $port1->on("Receive", 'onReceive');
 
@@ -44,7 +44,8 @@ $port1->on("Receive", 'onReceive');
 function onReceive($server, $fd, $reactorId, $data) {
 	logit("receive tcp data $data");
 	try {
-		$ac = (new T_S7Str)->decode($data);
+		$tobj = new T_BasePackage();
+		$ac = $tobj->decode($data)["ac"];
 		$packClass = $GLOBALS["PackageMap"][$ac];
 		if (! $packClass)
 			jdRet(E_PARAM, "unknown package $ac");
