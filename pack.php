@@ -38,6 +38,11 @@ TODO: d - double:8B
 - 字符串: `T_S7Str,8`，逗号后的参数为最大长度；特别地，a[8]表示定长数组
 - 数组，以`[size]`定义最大长度; 只支持一维数组
 
+本文件可直接执行，进行bin和json格式转换测试：
+
+	php pack.php json2bin < test/test_tcp.json > 1.bin
+	php pack.php bin2json < test/test_http.bin > 1.http
+
 */
 require_once("./jdcloud-php/common.php");
 
@@ -356,18 +361,27 @@ $GLOBALS["PacketMap"] = [
 	"palEmpty" => "T_PalEmptyPacket"
 ];
 
-/*
-$json = jsonDecode(file_get_contents("test/arrive.json"));
-$data = TBase::json2bin($json);
-echo($data);
-
-$data = file_get_contents("test/arrive.bin");
-$json = jsonEncode(TBase::bin2json($data), true);
-print_r($json);
-*/
-
-/*
 if (! @$GLOBALS["noExecApi"]) {
+
+// RUN:
+// php pack.php json2bin < test/test_tcp.json > 1.bin
+// php pack.php bin2json < test/test_http.bin > 1.http
+@$ac = $argv[1];
+if ($ac == "json2bin") {
+	$json = jsonDecode(file_get_contents("php://stdin"));
+	$data = TBase::json2bin($json);
+	echo($data);
+}
+else if ($ac == "bin2json") {
+	$data = file_get_contents("php://stdin");
+	$json = jsonEncode(TBase::bin2json($data), true);
+	echo($json);
+}
+else {
+	echo("Usage php pack.php json2bin|bin2json <in >out\n");
+}
+
+/*
 // 测试代码
 $pack = [
 	"ac" => "arrived",
@@ -398,5 +412,6 @@ $x = $p->encode($pack);
 var_dump($x);
 $y = $p->decode($x);
 var_dump($y);
-}
 */
+
+}

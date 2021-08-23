@@ -55,7 +55,7 @@ $port1->on("Receive", 'onReceive');
 function onReceive($server, $fd, $reactorId, $data) {
 	logit("receive tcp data $data");
 	try {
-		$p = bin2json($data);
+		$p = TBase::bin2json($data);
 		$json = jsonEncode($p);
 		logit("decode $packClass: $json");
 
@@ -94,7 +94,7 @@ function handleRequest($req, $res)
 			$req->post = jsonDecode($reqData);
 		}
 		$p = $req->post;//"OK";
-		$data = TBase::$json2bin($p);
+		$data = TBase::json2bin($p);
 		// file_put_contents("1.data", $data);
 
 		// tcp send
