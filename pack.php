@@ -1,6 +1,12 @@
 <?php
 /*
-可序列化类的写法
+每个TCP二进制报文以`T_S7Str[8] ac`开头，ac标识报文名。
+对每个报文应定义一个类如 T_ToWcsPacket(必须T_开头), 并注册到PacketMap中，数据结构为map: `{ac=>报文类名}`
+TCP报文转成HTTP时，使用JSON格式，形成一个JSON对象，其中包含ac字段
+
+T_S7Str是专门适配西门子S7-1200 PLC的字符串类型。
+
+报文类的写法
 
 - 继承TBase，拥有encode和decode方法
 - 每个类可以写一个onDecode方法，定义每个字段的类型，参考T_Carton;
@@ -9,16 +15,31 @@
 - 数组、字符串须定长; 数组前有个int16表示长度
 - 支持null
 
-自定义的报文结构开头须是`T_S7Str[8] ac`, 最终以`{ac=>报文类名}`的方式注册到`$GLOBALS["PackageMap"]`中。
+onDecode应返回 
+	[ 字段1, 类型1, 字段2, 类型2 ]
 
-类型写法
+onDecode应返回 
+	[ 类型1, 值1, 类型2, 值2]
 
-- 基础类型：n-int16, N-int32, f-float/real, a-char
+
+类型定义：可以是基本类型，或是继承于TBase的扩展类型。扩展类型类名必须以"T_"开头。
+
+基本类型如下所示：(参考php pack函数)
+
+c - char 1B
+n - uint16:2B (net-order)
+N - uint32:4B (net-order)
+f - float/real:4B
+a{N} - NUL-padded string
+TODO: A{N} - SPACE-padded string
+TODO: d - double:8B
+
 - 类型后可加一个数字，表示Size
-- 字符串: `T_S7Str,8`，逗号号的参数为最大长度；特别地，a[8]表示定长数组
-- 自定义类型，以`T_`开头
+- 字符串: `T_S7Str,8`，逗号后的参数为最大长度；特别地，a[8]表示定长数组
 - 数组，以`[size]`定义最大长度; 只支持一维数组
+
 */
+require_once("./jdcloud-php/common.php");
 
 class TBase
 {
@@ -50,6 +71,9 @@ class TBase
 			else if ($v == "a") {
 				$v = self::readStr($pack, $pos, $arraySize);
 			}
+			else if ($v == "c") {
+				$v = self::readChar($pack, $pos, $arraySize);
+			}
 			else if (substr($v, 0, 2) == "T_") {
 				if (!class_exists($v))
 					throw new Exception("bad class $v");
@@ -78,7 +102,7 @@ class TBase
 		$ret = [];
 		foreach ($def as $k => $type) {
 			$ret[] = $type;
-			$ret[] = $obj[$k];
+			$ret[] = @$obj[$k];
 		}
 		return $ret;
 	}
@@ -177,6 +201,19 @@ class TBase
 		$pos += $len;
 		return $o["a"];
 	}
+	static function readChar($pack, &$pos, $arraySize=0)
+	{
+		if ($arraySize) {
+			$len = 1 * $arraySize;
+			$o = unpack("c" . $arraySize, substr($pack, $pos, $len));
+			$pos += $len;
+			return array_values($o);
+		}
+		$len = 1;
+		$o = unpack("ca", substr($pack, $pos, $len));
+		$pos += $len;
+		return $o["a"];
+	}
 	static function readFloat($pack, &$pos, $arraySize=0)
 	{
 		if ($arraySize) {
@@ -197,6 +234,27 @@ class TBase
 		$rv = substr($pack, $pos, $cnt);
 		$pos += $cnt;
 		return $rv;
+	}
+
+	static function bin2json($data) {
+		$tobj = new T_BasePacket();
+		$ac = $tobj->decode($data)["ac"];
+		$packClass = $GLOBALS["PacketMap"][$ac];
+		if (! $packClass)
+			jdRet(E_PARAM, "unknown package $ac");
+		$p = (new $packClass)->decode($data);
+		return $p;
+	}
+
+	static function json2bin($p) {
+		if (! @$p["ac"])
+			jdRet(E_PARAM, "bad package. no ac");
+		$packClass = $GLOBALS["PacketMap"][$p["ac"]];
+		if (! $packClass)
+			jdRet(E_PARAM, "unknown package {$p["ac"]}");
+		$data = (new $packClass)->encode($p);
+		logit("encode $packClass: " . $data);
+		return $data;
 	}
 }
 
@@ -232,7 +290,7 @@ class T_S7Str extends TBase
 	}
 }
 
-class T_BasePackage extends TBase
+class T_BasePacket extends TBase
 {
 	protected function onDecode() {
 		return [
@@ -255,19 +313,20 @@ class T_Carton extends TBase
 	}
 }
 
-class T_ArrivePackage extends TBase
+class T_ToWcsPacket extends TBase
 {
 	protected function onDecode() {
 		return [
 			"ac" => "T_S7Str,8",
-			"area" => "a",
-			"cartonList" => "T_Carton[20]",
-			"endTag" => "a[4]" // for test
+			"area" => "c",
+			"unused" => "c",
+			"portCode" => "T_S7Str,16",
+			"cartonList" => "T_Carton[20]"
 		];
 	}
 }
 
-class T_ToPortPackage extends TBase
+class T_FinishedPacket extends TBase
 {
 	protected function onDecode() {
 		return [
@@ -279,17 +338,39 @@ class T_ToPortPackage extends TBase
 	}
 }
 
-$GLOBALS["PackageMap"] = [
-	"arrive" => "T_ArrivePackage",
-	"toport" => "T_ToPortPackage"
+class T_PalEmptyPacket extends TBase
+{
+	protected function onDecode() {
+		return [
+			"ac" => "T_S7Str,8",
+			"palletNo" => "T_S7Str,16",
+			"toLocationNo" => "T_S7Str,16"
+		];
+	}
+}
+
+$GLOBALS["PacketMap"] = [
+	"arrived" => "T_ToWcsPacket",
+	"clean" => "T_ToWcsPacket",
+	"finished" => "T_FinishedPacket",
+	"palEmpty" => "T_PalEmptyPacket"
 ];
 
+/*
+$json = jsonDecode(file_get_contents("test/arrive.json"));
+$data = TBase::json2bin($json);
+echo($data);
 
+$data = file_get_contents("test/arrive.bin");
+$json = jsonEncode(TBase::bin2json($data), true);
+print_r($json);
+*/
 
+/*
 if (! @$GLOBALS["noExecApi"]) {
 // 测试代码
 $pack = [
-	"ac" => "arrive",
+	"ac" => "arrived",
 	"area" => "A",
 	"cartonList" => [
 		[
@@ -306,17 +387,16 @@ $pack = [
 	"endTag" => "END"
 ];
 
-/*
 $p = new T_Carton();
 $x = $p->encode($pack["cartonList"][1]);
 //var_dump($x);
 $y = $p->decode($x);
 var_dump($y);
-*/
 
-$p = new T_ArrivePackage();
+$p = new T_ToWcsPacket();
 $x = $p->encode($pack);
 var_dump($x);
 $y = $p->decode($x);
 var_dump($y);
 }
+*/

@@ -55,12 +55,7 @@ $port1->on("Receive", 'onReceive');
 function onReceive($server, $fd, $reactorId, $data) {
 	logit("receive tcp data $data");
 	try {
-		$tobj = new T_BasePackage();
-		$ac = $tobj->decode($data)["ac"];
-		$packClass = $GLOBALS["PackageMap"][$ac];
-		if (! $packClass)
-			jdRet(E_PARAM, "unknown package $ac");
-		$p = (new $packClass)->decode($data);
+		$p = bin2json($data);
 		$json = jsonEncode($p);
 		logit("decode $packClass: $json");
 
@@ -99,13 +94,7 @@ function handleRequest($req, $res)
 			$req->post = jsonDecode($reqData);
 		}
 		$p = $req->post;//"OK";
-		if (! @$p["ac"])
-			jdRet(E_PARAM, "bad package. no ac");
-		$packClass = $GLOBALS["PackageMap"][$p["ac"]];
-		if (! $packClass)
-			jdRet(E_PARAM, "unknown package {$p["ac"]}");
-		$data = (new $packClass)->encode($p);
-		logit("encode $packClass: " . $data);
+		$data = TBase::$json2bin($p);
 		// file_put_contents("1.data", $data);
 
 		// tcp send
