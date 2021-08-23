@@ -12,13 +12,13 @@ $workerNum = 1;
 $g_conf = [
 	"port" => 14000, // port2 = port+1
 	"targetHttp" => [
-		"host" => "oliveche.com",
+		"host" => "localhost",
 		"port" => 80,
-		"url" => "/echo.php"
+		"url" => "/wis/api/Wis.wcsCallback"
 	],
 	"targetTcp" => [
-		"host" => "localhost",
-		"port" => 9090,
+		"host" => "wcs",
+		"port" => 2000,
 	]
 ];
 
