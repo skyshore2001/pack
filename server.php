@@ -13,6 +13,16 @@ $g_conf = [
 	"httpPort" => 14000,
 	"tcpPort" => 14001,
 	"targetHttp" => [
+		"host" => "localhost",
+		"port" => 80,
+		"url" => "/wis/api/Wis.wcsCallback"
+	],
+	"targetTcp" => [
+		"host" => "wcs",
+		"port" => 2000,
+	]
+/* for test
+	"targetHttp" => [
 		"host" => "oliveche.com",
 		"port" => 80,
 		"url" => "/echo.php"
@@ -21,6 +31,7 @@ $g_conf = [
 		"host" => "localhost",
 		"port" => 14002,
 	]
+*/
 ];
 
 #$server = new Swoole\WebSocket\Server("0.0.0.0", $port);
