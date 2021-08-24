@@ -104,7 +104,7 @@ function handleRequest($req, $res)
 			if (! $cli->connect($conf["host"], $conf["port"], 3))
 				jdRet(E_SERVER, "tcp connect fails");
 			$cli->send($data);
-			$rv = $cli->recv();
+			//$rv = $cli->recv();
 			logit("send tcp to " . $conf["host"] . ":" . $conf["port"] . ", recv " . $rv);
 			$cli->close();
 		}

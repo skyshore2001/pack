@@ -30,6 +30,7 @@ c - char 1B
 n - uint16:2B (net-order)
 N - uint32:4B (net-order)
 f - float/real:4B
+F - float/real:4B (net-order, PLC uses net-order but PHP does not support this)
 a{N} - NUL-padded string
 TODO: A{N} - SPACE-padded string
 TODO: d - double:8B
@@ -43,6 +44,7 @@ TODO: d - double:8B
 	php pack.php json2bin < test/test_tcp.json > 1.bin
 	php pack.php bin2json < test/test_http.bin > 1.http
 
+NOTE: PLC S7-1200 int=16bit/net-order, real=32bit/net-order
 */
 require_once("./jdcloud-php/common.php");
 
@@ -72,6 +74,9 @@ class TBase
 			}
 			else if ($v == "f") {
 				$v = self::readFloat($pack, $pos, $arraySize);
+			}
+			else if ($v == "F") {
+				$v = self::readFloat($pack, $pos, $arraySize, true);
 			}
 			else if ($v == "a") {
 				$v = self::readStr($pack, $pos, $arraySize);
@@ -219,16 +224,22 @@ class TBase
 		$pos += $len;
 		return $o["a"];
 	}
-	static function readFloat($pack, &$pos, $arraySize=0)
+	static function readFloat($pack, &$pos, $arraySize=0, $netOrder = false)
 	{
 		if ($arraySize) {
 			$len = 4 * $arraySize;
+			// TODO: handle netOrder
 			$o = unpack("f" . $arraySize, substr($pack, $pos, $len));
 			$pos += $len;
 			return array_values($o);
 		}
 		$len = 4;
-		$o = unpack("fa", substr($pack, $pos, $len));
+		$v = substr($pack, $pos, $len);
+		if ($netOrder) {
+			$t = $v[0]; $v[0] = $v[3]; $v[3] = $t;
+			$t = $v[1]; $v[1] = $v[2]; $v[2] = $t;
+		}
+		$o = unpack("fa", $v);
 		$pos += $len;
 		return $o["a"];
 	}
@@ -323,9 +334,9 @@ class T_ToWcsPacket extends TBase
 	protected function onDecode() {
 		return [
 			"ac" => "T_S7Str,8",
-			"area" => "c",
-			"unused" => "c",
-			"portCode" => "T_S7Str,16",
+			"area" => "a",
+			"status" => "c",
+			"portCode" => "n",
 			"cartonList" => "T_Carton[20]"
 		];
 	}
@@ -336,9 +347,9 @@ class T_FinishedPacket extends TBase
 	protected function onDecode() {
 		return [
 			"ac" => "T_S7Str,8",
-			"boxCode" => "T_S7Str,20",
-			"portCode" => "T_S7Str,20",
-			"weight" => "f"
+			"boxCode" => "T_S7Str,32",
+			"portCode" => "n",
+			"weight" => "F"
 		];
 	}
 }
