@@ -111,8 +111,15 @@ class TBase
 		$def = $this->onDecode();
 		$ret = [];
 		foreach ($def as $k => $type) {
+			@$v = $obj[$k];
+			if ($type == "F") {
+				$type = "f";
+				if ($v) {
+					self::hton4($v);
+				}
+			}
 			$ret[] = $type;
-			$ret[] = @$obj[$k];
+			$ret[] = $v;
 		}
 		return $ret;
 	}
@@ -236,8 +243,7 @@ class TBase
 		$len = 4;
 		$v = substr($pack, $pos, $len);
 		if ($netOrder) {
-			$t = $v[0]; $v[0] = $v[3]; $v[3] = $t;
-			$t = $v[1]; $v[1] = $v[2]; $v[2] = $t;
+			self::hton4($v);
 		}
 		$o = unpack("fa", $v);
 		$pos += $len;
@@ -271,6 +277,11 @@ class TBase
 		$data = (new $packClass)->encode($p);
 		logit("encode $packClass: " . $data);
 		return $data;
+	}
+
+	static function hton4(&$v) {
+		$t = $v[0]; $v[0] = $v[3]; $v[3] = $t;
+		$t = $v[1]; $v[1] = $v[2]; $v[2] = $t;
 	}
 }
 
