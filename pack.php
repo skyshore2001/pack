@@ -379,6 +379,7 @@ class T_PalEmptyPacket extends TBase
 $GLOBALS["PacketMap"] = [
 	"arrived" => "T_ToWcsPacket",
 	"clean" => "T_ToWcsPacket",
+	"lock" => "T_ToWcsPacket",
 	"finished" => "T_FinishedPacket",
 	"palEmpty" => "T_PalEmptyPacket"
 ];
