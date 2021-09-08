@@ -370,8 +370,18 @@ class T_PalEmptyPacket extends TBase
 	protected function onDecode() {
 		return [
 			"ac" => "T_S7Str,8",
-			"palletNo" => "T_S7Str,16",
-			"toLocationNo" => "T_S7Str,16"
+			//"palletNo" => "T_S7Str,16",
+			"toLocationNo" => "T_S7Str,32"
+		];
+	}
+}
+
+class T_FaultPacket extends TBase
+{
+	protected function onDecode() {
+		return [
+			"ac" => "T_S7Str,8",
+			"dscr" => "T_S7Str,32"
 		];
 	}
 }
@@ -382,6 +392,7 @@ $GLOBALS["PacketMap"] = [
 	"lock" => "T_ToWcsPacket",
 	"finished" => "T_FinishedPacket",
 	"palEmpty" => "T_PalEmptyPacket"
+	"fault" => "T_FaultPacket"
 ];
 
 if (! @$GLOBALS["noExecApi"]) {
