@@ -391,7 +391,7 @@ $GLOBALS["PacketMap"] = [
 	"clean" => "T_ToWcsPacket",
 	"lock" => "T_ToWcsPacket",
 	"finished" => "T_FinishedPacket",
-	"palEmpty" => "T_PalEmptyPacket"
+	"palEmpty" => "T_PalEmptyPacket",
 	"fault" => "T_FaultPacket"
 ];
 
